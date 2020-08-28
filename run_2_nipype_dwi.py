@@ -47,16 +47,8 @@ def create_DWI_workflow(
     ])
 
   
-# EXAMPLE ON WEBSITE to WORKFLOW
+# DWIDenoise
 # https://nipype.readthedocs.io/en/latest/api/generated/nipype.interfaces.mrtrix3.preprocess.html
-# denoise = mrt.DWIDenoise()
-# denoise.inputs.in_file = 'dwi.mif'
-# denoise.inputs.mask = 'mask.mif'
-# denoise.inputs.noise = 'noise.mif'
-# denoise.cmdline                               
-# 'dwidenoise -mask mask.mif -noise noise.mif dwi.mif dwi_denoised.mif'
-# denoise.run()  
-# select matching files from bids_dir
     n_denoise = Node(
         interface=mrt.DWIDenoise(),
         name='n_denoise'
