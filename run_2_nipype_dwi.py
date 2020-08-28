@@ -3,32 +3,20 @@
 import os.path
 import os
 import glob
-from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom, Merge, UnaryMaths
+import nipype.interfaces.mrtrix3 as mrt
+
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 
-import nipype_interface_tgv_DWI as tgv
-import nipype_interface_romeo as romeo
-import nipype_interface_bestlinreg as bestlinreg
-import nipype_interface_applyxfm as applyxfm
-import nipype_interface_makehomogeneous as makehomogeneous
-import nipype_interface_nonzeroaverage as nonzeroaverage
-import nipype_interface_composite as composite
-
 import argparse
-
 
 def create_DWI_workflow(
     subject_list,
     bids_dir,
     work_dir,
     out_dir,
-    atlas_dir,
     bids_templates,
-    masking='bet-multiecho',
-    homogeneity_filter=True,
-    DWI_threads=1
 ):
 
     # create initial workflow
@@ -53,270 +41,30 @@ def create_DWI_workflow(
             base_directory=bids_dir
         ),
         name='get_subject_data'
-        # output: ['mag', 'phs', 'params']
     )
     wf.connect([
         (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
     ])
 
-    # count the number of echoes
-    def get_length(in_):
-        return len(in_)
-    n_num_echoes = Node(
-        interface=Function(
-            input_names=['in_'],
-            output_names=['num_echoes'],
-            function=get_length
-        ),
-        iterfield=['in_'],
-        name='get_num_echoes'
+  
+# EXAMPLE ON WEBSITE to WORKFLOW
+# https://nipype.readthedocs.io/en/latest/api/generated/nipype.interfaces.mrtrix3.preprocess.html
+# denoise = mrt.DWIDenoise()
+# denoise.inputs.in_file = 'dwi.mif'
+# denoise.inputs.mask = 'mask.mif'
+# denoise.inputs.noise = 'noise.mif'
+# denoise.cmdline                               
+# 'dwidenoise -mask mask.mif -noise noise.mif dwi.mif dwi_denoised.mif'
+# denoise.run()  
+# select matching files from bids_dir
+    n_denoise = Node(
+        interface=mrt.DWIDenoise(),
+        name='n_denoise'
     )
     wf.connect([
-        (n_selectfiles, n_num_echoes, [('phs', 'in_')])
+        (n_selectfiles, n_denoise, [('DWI_all', 'in_file')])
     ])
 
-    # scale phase data
-    mn_stats = MapNode(
-        # -R : <min intensity> <max intensity>
-        interface=ImageStats(op_string='-R'),
-        iterfield=['in_file'],
-        name='get_min_max',
-        # output: 'out_stat'
-    )
-    mn_phs_range = MapNode(
-        interface=ImageMaths(suffix="_scaled"),
-        name='scale_phase',
-        iterfield=['in_file']
-        # inputs: 'in_file', 'op_string'
-        # output: 'out_file'
-    )
-
-    def scale_to_pi(min_and_max):
-        from math import pi
-
-        min_value = min_and_max[0][0]
-        max_value = min_and_max[0][1]
-        fsl_cmd = ""
-
-        # set range to [0, max-min]
-        fsl_cmd += "-sub %.10f " % min_value
-        max_value -= min_value
-        min_value -= min_value
-
-        # set range to [0, 2pi]
-        fsl_cmd += "-div %.10f " % (max_value / (2*pi))
-
-        # set range to [-pi, pi]
-        fsl_cmd += "-sub %.10f" % pi
-        return fsl_cmd
-
-    wf.connect([
-        (n_selectfiles, mn_stats, [('phs', 'in_file')]),
-        (n_selectfiles, mn_phs_range, [('phs', 'in_file')]),
-        (mn_stats, mn_phs_range, [(('out_stat', scale_to_pi), 'op_string')])
-    ])
-
-    # read echotime and field strengths from json files
-    def read_json(in_file):
-        import os
-        te = 0.001
-        b0 = 7
-        if os.path.exists(in_file):
-            import json
-            with open(in_file, 'rt') as fp:
-                data = json.load(fp)
-                te = data['EchoTime']
-                b0 = data['MagneticFieldStrength']
-        return te, b0
-
-    mn_params = MapNode(
-        interface=Function(
-            input_names=['in_file'],
-            output_names=['EchoTime', 'MagneticFieldStrength'],
-            function=read_json
-        ),
-        iterfield=['in_file'],
-        name='read_json'
-    )
-    wf.connect([
-        (n_selectfiles, mn_params, [('params', 'in_file')])
-    ])
-    n_params_e01 = Node(
-        interface=Function(
-            input_names=['in_file'],
-            output_names=['EchoTime', 'MagneticFieldStrength'],
-            function=read_json
-        ),
-        name='read_json1'
-    )
-    wf.connect([
-        (n_selectfiles, n_params_e01, [('params1', 'in_file')])
-    ])
-
-    def repeat(in_file):
-        return in_file
-
-
-    # brain extraction
-    if 'bet' in masking:
-        # homogeneity filter
-        n_mag = MapNode(
-            interface=Function(
-                input_names=['in_file'],
-                output_names=['out_file'],
-                function=repeat
-            ),
-            iterfield=['in_file'],
-            name='repeat_magnitude'
-        )
-        if homogeneity_filter:
-            mn_homogeneity_filter = MapNode(
-                interface=makehomogeneous.MakeHomogeneousInterface(),
-                iterfield=['in_file'],
-                name='make_homogeneous'
-                # output : out_file
-            )
-            wf.connect([
-                (n_selectfiles, mn_homogeneity_filter, [('mag', 'in_file')]),
-                (mn_homogeneity_filter, n_mag, [('out_file', 'in_file')])
-            ])
-        else:
-            wf.connect([
-                (n_selectfiles, n_mag, [('mag', 'in_file')])
-            ])
-
-        bet = MapNode(
-            interface=BET(frac=0.4, mask=True, robust=True),
-            iterfield=['in_file'],
-            name='fsl_bet'
-            # output: 'mask_file'
-        )
-
-        wf.connect([
-            (n_mag, bet, [('out_file', 'in_file')])
-        ])
-
-        mn_mask = MapNode(
-            interface=Function(
-                input_names=['in_file'],
-                output_names=['mask_file'],
-                function=repeat
-            ),
-            iterfield=['in_file'],
-            name='repeat_mask'
-        )
-        wf.connect([
-            (bet, mn_mask, [('mask_file', 'in_file')])
-        ])
-    elif masking == 'romeo':
-        # per-echo ROMEO masks
-        n_romeo = MapNode(
-            interface=romeo.RomeoInterface(
-                weights_threshold=200
-            ),
-            iterfield=['in_file', 'echo_time'],
-            name='romeo_mask'
-            # output: 'out_file'
-        )
-        wf.connect([
-            (n_selectfiles, n_romeo, [('phs', 'in_file')]),
-            (mn_params, n_romeo, [('EchoTime', 'echo_time')])
-        ])
-
-        n_romeo_maths = MapNode(
-            interface=ImageMaths(
-                suffix='_ero_dil',
-                op_string='-ero -dilM'
-            ),
-            iterfield=['in_file'],
-            name='romeo_ero_dil'
-            # input  : 'in_file'
-            # output : 'out_file'
-        )
-        wf.connect([
-            (n_romeo, n_romeo_maths, [('out_file', 'in_file')])
-        ])
-
-        mn_mask = MapNode(
-            interface=Function(
-                input_names=['in_file'],
-                output_names=['mask_file'],
-                function=repeat
-            ),
-            iterfield=['in_file'],
-            name='repeat_mask'
-        )
-        wf.connect([
-            (n_romeo_maths, mn_mask, [('out_file', 'in_file')])
-        ])
-
-        # first-echo ROMEO mask for composite inclusions
-        n_romeo_e01 = Node(
-            interface=romeo.RomeoInterface(
-                weights_threshold=200
-            ),
-            name='romeo_e01_mask'
-            # output : 'out_file'
-        )
-        wf.connect([
-            (n_selectfiles, n_romeo_e01, [('phs1', 'in_file')]),
-            (n_params_e01, n_romeo_e01, [('EchoTime', 'echo_time')])
-        ])
-        n_romeo_e01_maths = Node(
-            interface=ImageMaths(
-                suffix='_ero_dil_fillh',
-                op_string='-ero -dilM -fillh'
-            ),
-            name='romeo_e01_ero_dil_fillh'
-            # input  : 'in_file'
-            # output : 'out_file'
-        )
-        wf.connect([
-            (n_romeo_e01, n_romeo_e01_maths, [('out_file', 'in_file')])
-        ])
-    
-    # DWI processing
-    mn_DWI_iterfield = ['phase_file', 'TE', 'b0']
-    
-    # if using a multi-echo masking method, add mask_file to iterfield
-    if masking not in ['bet-firstecho', 'bet-lastecho']: mn_DWI_iterfield.append('mask_file')
-
-    mn_DWI = MapNode(
-        interface=tgv.DWIappingInterface(
-            iterations=1000,
-            alpha=[0.0015, 0.0005],
-            erosions=0 if masking == 'romeo' else 5,
-            num_threads=DWI_threads,
-            out_suffix='_DWI_recon'
-        ),
-        iterfield=mn_DWI_iterfield,
-        name='DWI'
-        # output: 'out_file'
-    )
-
-    # args for PBS
-    mn_DWI.plugin_args = {
-        'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={DWI_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
-        'overwrite': True
-    }
-
-    wf.connect([
-        (mn_params, mn_DWI, [('EchoTime', 'TE')]),
-        (mn_params, mn_DWI, [('MagneticFieldStrength', 'b0')]),
-        (mn_mask, mn_DWI, [('mask_file', 'mask_file')]),
-        (mn_phs_range, mn_DWI, [('out_file', 'phase_file')])
-    ])
-
-    # DWI averaging
-    n_DWI_average = Node(
-        interface=nonzeroaverage.NonzeroAverageInterface(),
-        name='DWI_average'
-        # input : in_files
-        # output : out_file
-    )
-    wf.connect([
-        (mn_DWI, n_DWI_average, [('out_file', 'in_files')])
-    ])
 
     # datasink
     n_datasink = Node(
@@ -325,65 +73,9 @@ def create_DWI_workflow(
     )
 
     wf.connect([
-        (n_DWI_average, n_datasink, [('out_file', 'DWI_average')]),
-        (mn_DWI, n_datasink, [('out_file', 'DWI_single')]),
-        (mn_mask, n_datasink, [('mask_file', 'mask_single')])
+        (n_selectfiles, n_datasink, [('all_b0_PA', 'all_b0_PA_unchanged')]),
+        (n_denoise, n_datasink, [('out_file', 'all_b0_PA_denoised')])
     ])
-
-    if masking == 'romeo':
-        mn_DWI_filled = MapNode(
-            interface=tgv.DWIappingInterface(
-                iterations=1000,
-                alpha=[0.0015, 0.0005],
-                erosions=5,
-                num_threads=DWI_threads,
-                out_suffix='_DWI_recon_filled'
-            ),
-            iterfield=['phase_file', 'TE', 'b0'],
-            name='DWI_filled'
-            # output: 'out_file'
-        )
-
-        # args for PBS
-        mn_DWI_filled.plugin_args = {
-            'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={DWI_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
-            'overwrite': True
-        }
-
-        wf.connect([
-            (mn_params, mn_DWI_filled, [('EchoTime', 'TE')]),
-            (mn_params, mn_DWI_filled, [('MagneticFieldStrength', 'b0')]),
-            (n_romeo_e01_maths, mn_DWI_filled, [('out_file', 'mask_file')]),
-            (mn_phs_range, mn_DWI_filled, [('out_file', 'phase_file')])
-        ])
-
-        # DWI averaging
-        n_DWI_filled_average = Node(
-            interface=nonzeroaverage.NonzeroAverageInterface(),
-            name='DWI_filled_average'
-            # input : in_files
-            # output : out_file
-        )
-        wf.connect([
-            (mn_DWI_filled, n_DWI_filled_average, [('out_file', 'in_files')])
-        ])
-
-        # composite DWI
-        n_composite = Node(
-            interface=composite.CompositeNiftiInterface(),
-            name='DWI_composite'
-        )
-        wf.connect([
-            (n_DWI_average, n_composite, [('out_file', 'in_file1')]),
-            (n_DWI_filled_average, n_composite, [('out_file', 'in_file2')])
-        ])
-
-        wf.connect([
-            (n_romeo_e01_maths, n_datasink, [('out_file', 'mask_filled_single')]),
-            (n_DWI_filled_average, n_datasink, [('out_file', 'DWI_filled_average')]),
-            (n_composite, n_datasink, [('out_file', 'DWI_composite')]),
-            (mn_DWI_filled, n_datasink, [('out_file', 'DWI_filled_single')])
-        ])
 
 
     return wf
@@ -463,6 +155,7 @@ if __name__ == "__main__":
 
     bids_templates = {
         'all_b0_PA': '{subject_id_p}/dwi/all_b0_PA.mif',
+        'DWI_all': '{subject_id_p}/dwi/DWI_all.mif',
     }
 
     wf = create_DWI_workflow(
