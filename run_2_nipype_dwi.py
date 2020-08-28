@@ -8,7 +8,7 @@ from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 
-import nipype_interface_tgv_qsm as tgv
+import nipype_interface_tgv_DWI as tgv
 import nipype_interface_romeo as romeo
 import nipype_interface_bestlinreg as bestlinreg
 import nipype_interface_applyxfm as applyxfm
@@ -19,7 +19,7 @@ import nipype_interface_composite as composite
 import argparse
 
 
-def create_qsm_workflow(
+def create_DWI_workflow(
     subject_list,
     bids_dir,
     work_dir,
@@ -28,11 +28,11 @@ def create_qsm_workflow(
     bids_templates,
     masking='bet-multiecho',
     homogeneity_filter=True,
-    qsm_threads=1
+    DWI_threads=1
 ):
 
     # create initial workflow
-    wf = Workflow(name='qsm', base_dir=work_dir)
+    wf = Workflow(name='DWI', base_dir=work_dir)
 
     # use infosource to iterate workflow across subject list
     n_infosource = Node(
@@ -275,47 +275,47 @@ def create_qsm_workflow(
             (n_romeo_e01, n_romeo_e01_maths, [('out_file', 'in_file')])
         ])
     
-    # qsm processing
-    mn_qsm_iterfield = ['phase_file', 'TE', 'b0']
+    # DWI processing
+    mn_DWI_iterfield = ['phase_file', 'TE', 'b0']
     
     # if using a multi-echo masking method, add mask_file to iterfield
-    if masking not in ['bet-firstecho', 'bet-lastecho']: mn_qsm_iterfield.append('mask_file')
+    if masking not in ['bet-firstecho', 'bet-lastecho']: mn_DWI_iterfield.append('mask_file')
 
-    mn_qsm = MapNode(
-        interface=tgv.QSMappingInterface(
+    mn_DWI = MapNode(
+        interface=tgv.DWIappingInterface(
             iterations=1000,
             alpha=[0.0015, 0.0005],
             erosions=0 if masking == 'romeo' else 5,
-            num_threads=qsm_threads,
-            out_suffix='_qsm_recon'
+            num_threads=DWI_threads,
+            out_suffix='_DWI_recon'
         ),
-        iterfield=mn_qsm_iterfield,
-        name='qsm'
+        iterfield=mn_DWI_iterfield,
+        name='DWI'
         # output: 'out_file'
     )
 
     # args for PBS
-    mn_qsm.plugin_args = {
-        'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
+    mn_DWI.plugin_args = {
+        'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={DWI_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
         'overwrite': True
     }
 
     wf.connect([
-        (mn_params, mn_qsm, [('EchoTime', 'TE')]),
-        (mn_params, mn_qsm, [('MagneticFieldStrength', 'b0')]),
-        (mn_mask, mn_qsm, [('mask_file', 'mask_file')]),
-        (mn_phs_range, mn_qsm, [('out_file', 'phase_file')])
+        (mn_params, mn_DWI, [('EchoTime', 'TE')]),
+        (mn_params, mn_DWI, [('MagneticFieldStrength', 'b0')]),
+        (mn_mask, mn_DWI, [('mask_file', 'mask_file')]),
+        (mn_phs_range, mn_DWI, [('out_file', 'phase_file')])
     ])
 
-    # qsm averaging
-    n_qsm_average = Node(
+    # DWI averaging
+    n_DWI_average = Node(
         interface=nonzeroaverage.NonzeroAverageInterface(),
-        name='qsm_average'
+        name='DWI_average'
         # input : in_files
         # output : out_file
     )
     wf.connect([
-        (mn_qsm, n_qsm_average, [('out_file', 'in_files')])
+        (mn_DWI, n_DWI_average, [('out_file', 'in_files')])
     ])
 
     # datasink
@@ -325,64 +325,64 @@ def create_qsm_workflow(
     )
 
     wf.connect([
-        (n_qsm_average, n_datasink, [('out_file', 'qsm_average')]),
-        (mn_qsm, n_datasink, [('out_file', 'qsm_single')]),
+        (n_DWI_average, n_datasink, [('out_file', 'DWI_average')]),
+        (mn_DWI, n_datasink, [('out_file', 'DWI_single')]),
         (mn_mask, n_datasink, [('mask_file', 'mask_single')])
     ])
 
     if masking == 'romeo':
-        mn_qsm_filled = MapNode(
-            interface=tgv.QSMappingInterface(
+        mn_DWI_filled = MapNode(
+            interface=tgv.DWIappingInterface(
                 iterations=1000,
                 alpha=[0.0015, 0.0005],
                 erosions=5,
-                num_threads=qsm_threads,
-                out_suffix='_qsm_recon_filled'
+                num_threads=DWI_threads,
+                out_suffix='_DWI_recon_filled'
             ),
             iterfield=['phase_file', 'TE', 'b0'],
-            name='qsm_filled'
+            name='DWI_filled'
             # output: 'out_file'
         )
 
         # args for PBS
-        mn_qsm_filled.plugin_args = {
-            'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
+        mn_DWI_filled.plugin_args = {
+            'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={DWI_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
             'overwrite': True
         }
 
         wf.connect([
-            (mn_params, mn_qsm_filled, [('EchoTime', 'TE')]),
-            (mn_params, mn_qsm_filled, [('MagneticFieldStrength', 'b0')]),
-            (n_romeo_e01_maths, mn_qsm_filled, [('out_file', 'mask_file')]),
-            (mn_phs_range, mn_qsm_filled, [('out_file', 'phase_file')])
+            (mn_params, mn_DWI_filled, [('EchoTime', 'TE')]),
+            (mn_params, mn_DWI_filled, [('MagneticFieldStrength', 'b0')]),
+            (n_romeo_e01_maths, mn_DWI_filled, [('out_file', 'mask_file')]),
+            (mn_phs_range, mn_DWI_filled, [('out_file', 'phase_file')])
         ])
 
-        # qsm averaging
-        n_qsm_filled_average = Node(
+        # DWI averaging
+        n_DWI_filled_average = Node(
             interface=nonzeroaverage.NonzeroAverageInterface(),
-            name='qsm_filled_average'
+            name='DWI_filled_average'
             # input : in_files
             # output : out_file
         )
         wf.connect([
-            (mn_qsm_filled, n_qsm_filled_average, [('out_file', 'in_files')])
+            (mn_DWI_filled, n_DWI_filled_average, [('out_file', 'in_files')])
         ])
 
-        # composite qsm
+        # composite DWI
         n_composite = Node(
             interface=composite.CompositeNiftiInterface(),
-            name='qsm_composite'
+            name='DWI_composite'
         )
         wf.connect([
-            (n_qsm_average, n_composite, [('out_file', 'in_file1')]),
-            (n_qsm_filled_average, n_composite, [('out_file', 'in_file2')])
+            (n_DWI_average, n_composite, [('out_file', 'in_file1')]),
+            (n_DWI_filled_average, n_composite, [('out_file', 'in_file2')])
         ])
 
         wf.connect([
             (n_romeo_e01_maths, n_datasink, [('out_file', 'mask_filled_single')]),
-            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_filled_average')]),
-            (n_composite, n_datasink, [('out_file', 'qsm_composite')]),
-            (mn_qsm_filled, n_datasink, [('out_file', 'qsm_filled_single')])
+            (n_DWI_filled_average, n_datasink, [('out_file', 'DWI_filled_average')]),
+            (n_composite, n_datasink, [('out_file', 'DWI_composite')]),
+            (mn_DWI_filled, n_datasink, [('out_file', 'DWI_filled_single')])
         ])
 
 
@@ -391,7 +391,7 @@ def create_qsm_workflow(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="QSM processing pipeline",
+        description="DWI processing pipeline",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
@@ -428,35 +428,6 @@ if __name__ == "__main__":
         help='debug mode'
     )
 
-    parser.add_argument(
-        '--masking',
-        default='bet-multiecho',
-        const='bet-multiecho',
-        nargs='?',
-        choices=['bet-multiecho', 'bet-firstecho', 'bet-lastecho', 'romeo', 'atlas-based', 'composite'],
-        help='masking strategy'
-    )
-
-    parser.add_argument(
-        "--hf",
-        dest='homogeneity_filter',
-        action='store_true',
-        help='disables magnitude homogeneity filter for bet; enables homogeneity filter for other masking strategies'
-    )
-
-    parser.add_argument(
-        '--atlas_dir',
-        default=os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "atlas"
-        ),
-        const=os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "atlas"
-        ),
-        nargs='?',
-        help='atlas directory',
-    )
 
     parser.add_argument(
         '--pbs',
@@ -490,34 +461,16 @@ if __name__ == "__main__":
     else:
         subject_list = args.subjects
 
-    # default homogeneity filter setting: on for BET, off for everything else
-    homogeneity_filter = 'bet' in args.masking
-
     bids_templates = {
-        'mag': '{subject_id_p}/anat/*gre*magnitude*.nii.gz',
-        'phs': '{subject_id_p}/anat/*gre*phase*.nii.gz',
-        'phs1': '{subject_id_p}/anat/*gre*E01*phase.nii.gz',
-        'params': '{subject_id_p}/anat/*gre*phase*.json',
-        'params1': '{subject_id_p}/anat/*gre*E01*phase*.json'
+        'all_b0_PA': '{subject_id_p}/dwi/all_b0_PA.mif',
     }
-    if 'bet-firstecho' in args.masking:
-        bids_templates['mag'] = bids_templates['mag'].replace('gre*', 'gre*E01*')
-    if 'bet-lastecho' in args.masking:
-        num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*gre*magnitude*.nii.gz")))
-        bids_templates['mag'] = bids_templates['mag'].replace('gre*', f'gre*E{num_echoes:02}*')
-    if 'romeo' in args.masking:
-        del bids_templates['mag']
 
-    wf = create_qsm_workflow(
+    wf = create_DWI_workflow(
         subject_list=subject_list,
         bids_dir=os.path.abspath(args.bids_dir),
         work_dir=os.path.abspath(args.work_dir),
         out_dir=os.path.abspath(args.out_dir),
-        masking=args.masking,
-        atlas_dir=os.path.abspath(args.atlas_dir),
-        bids_templates=bids_templates,
-        homogeneity_filter=homogeneity_filter != args.homogeneity_filter,
-        qsm_threads=16 if args.pbs else 1
+        bids_templates=bids_templates
     )
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
@@ -538,6 +491,3 @@ if __name__ == "__main__":
                 'n_procs': int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
             }
         )
-
-    #wf.write_graph(graph2use='flat', format='png', simple_form=False)
-    #wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=16,mem=5gb,vmem=5gb, walltime=30:00:00'})
