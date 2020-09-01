@@ -162,6 +162,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     # run workflow
+    # test katelin
     if args.pbs:
         wf.run(
             plugin='PBSGraph',
