@@ -57,7 +57,6 @@ def create_DWI_workflow(
         (n_selectfiles, n_denoise, [('DWI_all', 'in_file')])
     ])
 
-
     # datasink
     n_datasink = Node(
         interface=DataSink(base_directory=bids_dir, container=out_dir),
@@ -69,7 +68,28 @@ def create_DWI_workflow(
         (n_denoise, n_datasink, [('out_file', 'all_b0_PA_denoised')])
     ])
 
+########## I'VE ADDED IN ##########################################################################
+    # MRDeGibbs
+    # https://nipype.readthedocs.io/en/latest/api/generated/nipype.interfaces.mrtrix3.preprocess.html
+    n_degibbs = Node(
+        interface=mrt.MRDeGibbs(),
+        name='n_degibbs'
+    )
+    wf.connect([
+        (n_selectfiles, n_degibbs, [('all_b0_PA_denoised', 'in_file')])
+    ])
 
+    # datasink
+    n_datasink = Node(
+        interface=DataSink(base_directory=bids_dir, container=out_dir),
+        name='datasink'
+    )
+
+    wf.connect([
+        (n_degibbs, n_datasink, [('out_file', 'all_b0_PA_degibbs')])
+    ])
+    ########## I'VE ADDED IN #############################################################################
+    
     return wf
 
 
@@ -162,7 +182,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     # run workflow
-    # test katelin
+
     if args.pbs:
         wf.run(
             plugin='PBSGraph',
