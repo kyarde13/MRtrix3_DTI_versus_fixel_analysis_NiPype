@@ -59,7 +59,7 @@ def create_DWI_workflow(
 
     # datasink
     n_datasink = Node(
-        interface=DataSink(base_directory=bids_dir, container=out_dir),
+        interface=DataSink(base_directory=out_dir),
         name='datasink'
     )
 
@@ -76,18 +76,15 @@ def create_DWI_workflow(
         name='n_degibbs'
     )
     wf.connect([
-        (n_selectfiles, n_degibbs, [('all_b0_PA_denoised', 'in_file')])
+        (n_denoise, n_degibbs, [('out_file', 'in_file')])
     ])
-
-    # datasink
-    n_datasink = Node(
-        interface=DataSink(base_directory=bids_dir, container=out_dir),
-        name='datasink'
-    )
 
     wf.connect([
         (n_degibbs, n_datasink, [('out_file', 'all_b0_PA_degibbs')])
     ])
+
+   
+
     ########## I'VE ADDED IN #############################################################################
     
     return wf
@@ -181,6 +178,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
+    wf.write_graph(graph2use='flat', format='png', simple_form=False)
     # run workflow
 
     if args.pbs:
