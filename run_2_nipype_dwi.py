@@ -86,7 +86,22 @@ def create_DWI_workflow(
    
 
     ########## I'VE ADDED IN #############################################################################
-    
+    # DWI Extract
+    n_dwiextract = Node(
+        interface=mrt.DWIExtract(
+            bzero=True,
+            out_file='b0vols.mif'
+        ),
+        name='n_dwiextract'
+    )
+    wf.connect([
+        (n_degibbs, n_dwiextract, [('out_file', 'in_file')])
+    ])
+
+    wf.connect([
+        (n_dwiextract, n_datasink, [('out_file', 'noddi_b0_degibbs')])
+    ])
+
     return wf
 
 
