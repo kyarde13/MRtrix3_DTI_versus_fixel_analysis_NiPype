@@ -11,12 +11,15 @@ from nipype.pipeline.engine import Workflow, Node, MapNode
 
 import argparse
 
+import mrcat_function as mrcatfunc
+
 def create_DWI_workflow(
     subject_list,
     bids_dir,
     work_dir,
     out_dir,
     bids_templates,
+    dicom_dir,
 ):
 
     # create initial workflow
@@ -83,10 +86,7 @@ def create_DWI_workflow(
         (n_degibbs, n_datasink, [('out_file', 'all_b0_PA_degibbs')])
     ])
 
-   
-
-    ########## I'VE ADDED IN #############################################################################
-    # DWI Extract
+   # DWI Extract
     n_dwiextract = Node(
         interface=mrt.DWIExtract(
             bzero=True,
@@ -94,6 +94,7 @@ def create_DWI_workflow(
         ),
         name='n_dwiextract'
     )
+
     wf.connect([
         (n_degibbs, n_dwiextract, [('out_file', 'in_file')])
     ])
@@ -101,7 +102,41 @@ def create_DWI_workflow(
     wf.connect([
         (n_dwiextract, n_datasink, [('out_file', 'noddi_b0_degibbs')])
     ])
+    ##Connect DTI_B0_PA to mrcat node
+    # select files from dicom_dir
+    n_selectfiles = Node(
+        interface=SelectFiles(
+            templates=bids_templates,
+            base_directory=bids_dir
+        ),
+        name='get_subject_data'
+    )
+    wf.connect([
+        (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
+    ])
 
+    ##
+    # MRcat
+    n_mrcat = Node(
+        interface=mrcatfunc.MRCat(
+            #axis=3,
+            #out_file = 'b0s.mif'
+        ),
+        name='n_mrcat'
+    )
+
+    wf.connect([
+        (n_dwiextract, n_mrcat, [('out_file', 'in_file1')])
+    ])
+
+    wf.connect([
+        (n_dwiextract, n_mrcat, [('out_file', 'in_file1')])
+    ])
+
+    wf.connect([
+        (n_mrcat, n_datasink, [('out_file', 'noddi_and_PA_b0s.mif')])
+    ])
+#################################################################################3
     return wf
 
 
@@ -135,6 +170,12 @@ if __name__ == "__main__":
         '--out_dir',
         required=True,
         help='output directory'
+    )
+
+    parser.add_argument(
+        '--dicom_dir',
+        required=True,
+        help='DWI noddi and b0 data directory'
     )
 
     parser.add_argument(
@@ -187,6 +228,7 @@ if __name__ == "__main__":
         bids_dir=os.path.abspath(args.bids_dir),
         work_dir=os.path.abspath(args.work_dir),
         out_dir=os.path.abspath(args.out_dir),
+        dicom_dir=os.path.abspath(args.dicom_dir),
         bids_templates=bids_templates
     )
 
