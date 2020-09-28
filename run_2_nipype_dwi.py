@@ -19,7 +19,6 @@ def create_DWI_workflow(
     work_dir,
     out_dir,
     bids_templates,
-    dicom_dir,
 ):
 
     # create initial workflow
@@ -102,35 +101,24 @@ def create_DWI_workflow(
     wf.connect([
         (n_dwiextract, n_datasink, [('out_file', 'noddi_b0_degibbs')])
     ])
-    ##Connect DTI_B0_PA to mrcat node
-    # select files from dicom_dir
-    n_selectfiles = Node(
-        interface=SelectFiles(
-            templates=bids_templates,
-            base_directory=bids_dir
-        ),
-        name='get_subject_data'
-    )
-    wf.connect([
-        (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
-    ])
 
     ##
     # MRcat
     n_mrcat = Node(
         interface=mrcatfunc.MRCat(
             #axis=3,
-            #out_file = 'b0s.mif'
+            out_file = 'b0s.mif'
         ),
         name='n_mrcat'
     )
 
+    ##Connect DTI_B0_PA to mrcat node
     wf.connect([
-        (n_dwiextract, n_mrcat, [('out_file', 'in_file1')])
+        (n_selectfiles, n_mrcat, [('DTI_B0_PA', 'in_file1')])
     ])
 
     wf.connect([
-        (n_dwiextract, n_mrcat, [('out_file', 'in_file1')])
+        (n_dwiextract, n_mrcat, [('out_file', 'in_file2')])
     ])
 
     wf.connect([
@@ -170,12 +158,6 @@ if __name__ == "__main__":
         '--out_dir',
         required=True,
         help='output directory'
-    )
-
-    parser.add_argument(
-        '--dicom_dir',
-        required=True,
-        help='DWI noddi and b0 data directory'
     )
 
     parser.add_argument(
@@ -221,6 +203,7 @@ if __name__ == "__main__":
     bids_templates = {
         'all_b0_PA': '{subject_id_p}/dwi/all_b0_PA.mif',
         'DWI_all': '{subject_id_p}/dwi/DWI_all.mif',
+        'DTI_B0_PA': '{subject_id_p}/dwi/DTI_B0_PA',
     }
 
     wf = create_DWI_workflow(
@@ -228,7 +211,6 @@ if __name__ == "__main__":
         bids_dir=os.path.abspath(args.bids_dir),
         work_dir=os.path.abspath(args.work_dir),
         out_dir=os.path.abspath(args.out_dir),
-        dicom_dir=os.path.abspath(args.dicom_dir),
         bids_templates=bids_templates
     )
 

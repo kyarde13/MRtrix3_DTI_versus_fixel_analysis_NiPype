@@ -1,12 +1,12 @@
 # emacs: -*- mode: python; py-indent-offset: 4; indent-tabs-mode: nil -*-
 # vi: set ft=python sts=4 ts=4 sw=4 et:
 # -*- coding: utf-8 -*-
-
+import os.path as op
 from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec
 from nipype.interfaces.mrtrix3.base import MRTrix3BaseInputSpec, MRTrix3Base
 
 class MRCatInputSpec(MRTrix3BaseInputSpec):
-    in_file1 = File(
+    in_file1 = traits.String(
         exists=True, argstr="%s", mandatory=True, position=-2, desc="input image 1"
     )
     in_file2 = File(
@@ -37,8 +37,7 @@ class MRCat(MRTrix3Base):
     >>> mrcat.run()                               # doctest: +SKIP
     """
     _cmd = "mrcat"
-    input1_spec = MRCatInputSpec
-    input2_spec = MRCatInputSpec
+    input_spec = MRCatInputSpec
     output_spec = MRCatOutputSpec
 
     def _list_outputs(self):
