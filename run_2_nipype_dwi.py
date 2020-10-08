@@ -12,6 +12,16 @@ from nipype.pipeline.engine import Workflow, Node, MapNode
 import argparse
 
 import mrcat_function as mrcatfunc
+import preproc_function as preprocfunc
+import preprocess as preprocess
+import fod2fixel_function as fod2fixelfunc
+import fixel2peaks_function as fixel2peaksfunc
+import mrcalc_function as mrcalcfunc
+import utils as utils
+
+#import fixel2peaks_func as fixel2peaksfunc
+#import mrcalc_func as mrcalcfunc
+#import tensor2metric_func as tensor2metricfunc
 
 def create_DWI_workflow(
     subject_list,
@@ -102,7 +112,6 @@ def create_DWI_workflow(
         (n_dwiextract, n_datasink, [('out_file', 'noddi_b0_degibbs')])
     ])
 
-    ##
     # MRcat
     n_mrcat = Node(
         interface=mrcatfunc.MRCat(
@@ -112,7 +121,7 @@ def create_DWI_workflow(
         name='n_mrcat'
     )
 
-    ##Connect DTI_B0_PA to mrcat node
+    # Connect DTI_B0_PA to mrcat node
     wf.connect([
         (n_selectfiles, n_mrcat, [('DTI_B0_PA', 'in_file1')])
     ])
@@ -121,9 +130,230 @@ def create_DWI_workflow(
         (n_dwiextract, n_mrcat, [('out_file', 'in_file2')])
     ])
 
+    # Output the mrcat file into file 'noddi_and_PA_b0s.mif'
     wf.connect([
         (n_mrcat, n_datasink, [('out_file', 'noddi_and_PA_b0s.mif')])
     ])
+
+    # DWIfslpreproc
+    n_dwifslpreproc = Node(
+        interface=preprocfunc.DWIFslPreProc(
+            out_file = 'preprocessedDWIs.mif',
+            use_header = True
+        ),
+        name='n_dwifslpreproc'
+    )
+
+    # Connect output of degibbs to dwifslpreproc node
+    wf.connect([
+        (n_degibbs, n_dwifslpreproc, [('out_file', 'in_file')])
+    ])
+    # Connect output of mrcat to se_epi input
+    wf.connect([
+        (n_mrcat, n_dwifslpreproc, [('out_file', 'se_epi_file')])
+    ])
+    # Put output of dwifslpreproc into 'preprocessedDWIs.mif'
+    wf.connect([
+        (n_dwifslpreproc, n_datasink, [('out_file', 'preprocessedDWIs.mif')])
+    ])
+
+    # DWI bias correct
+    n_dwibiascorrect = Node(
+        interface = preprocess.DWIBiasCorrect(
+            #out_file = 'ANTSpreprocessedDWIs.mif',
+            use_ants = True
+        ),
+        name = 'n_dwibiascorrect',
+        #use_ants = mrt.DWIBiasCorrect().inputs.use_ants,
+        #use_fsl = mrt.DWIBiasCorrect().inputs.use_fsl,
+    )
+
+    wf.connect([
+        (n_dwifslpreproc, n_dwibiascorrect, [('out_file', 'in_file')])
+    ])
+    wf.connect([
+        (n_dwibiascorrect, n_datasink, [('out_file', 'ANTSpreprocessedDWIs.mif')])
+    ]) 
+
+    #DWI2mask
+    n_dwi2mask = Node(
+        interface=mrt.BrainMask(
+            out_file = 'mask.mif'
+        ),
+        name='n_dwi2mask'
+    )
+    wf.connect([
+        (n_dwibiascorrect, n_dwi2mask, [('out_file', 'in_file')])
+    ])
+    wf.connect([
+        (n_dwi2mask, n_datasink, [('out_file', 'mask.mif')])
+    ]) 
+
+    ## A) Fixel-based analysis
+    #DWI2response
+    n_dwi2response = Node(
+        interface=mrt.ResponseSD(
+            algorithm = 'dhollander',
+            wm_file = 'wm_res.txt',
+            gm_file = 'gm_res.txt',
+            csf_file = 'csf_res.txt'
+        ),
+        name='n_dwi2response'
+    )
+
+    wf.connect([
+        (n_dwibiascorrect, n_dwi2response, [('out_file', 'in_file')])
+    ])
+    wf.connect([
+        (n_dwi2response, n_datasink, [('wm_file', 'wm_res.txt')])
+    ]) 
+    wf.connect([
+        (n_dwi2response, n_datasink, [('gm_file', 'gm_res.txt')])
+    ]) 
+    wf.connect([
+        (n_dwi2response, n_datasink, [('csf_file', 'csf_res.txt')])
+    ]) 
+
+    #DWI2fod
+    n_dwi2fod = Node(
+        interface=mrt.ConstrainedSphericalDeconvolution(
+            algorithm = 'msmt_csd',
+            wm_odf = 'wmfod.mif',
+            gm_odf = 'gmfod.mif',
+            csf_odf = 'csffod.mif'
+        ),
+        name='n_dwi2fod'
+    )
+    # connect outputs of dwi2fod into dwi2response
+    wf.connect([
+        (n_dwibiascorrect, n_dwi2fod, [('out_file', 'in_file')])
+    ])
+    wf.connect([
+        (n_dwi2response, n_dwi2fod, [('wm_file', 'wm_txt')])
+    ])   
+    wf.connect([
+        (n_dwi2response, n_dwi2fod, [('gm_file', 'gm_txt')])
+    ])  
+    wf.connect([
+        (n_dwi2response, n_dwi2fod, [('csf_file', 'csf_txt')])
+    ])  
+    # output wmfod file from dwi2fod
+    wf.connect([
+        (n_dwi2fod, n_datasink, [('wm_odf', 'wmfod.mif')])
+    ])
+    wf.connect([
+        (n_dwi2fod, n_datasink, [('gm_odf', 'gmfod.mif')])
+    ])
+    wf.connect([
+        (n_dwi2fod, n_datasink, [('csf_odf', 'csffod.mif')])
+    ])
+
+
+    #fod2fixel wmfod.mif wmfixels -fmls_peak_value 0 -fmls_integral 0.10 -afd afd.mif -peak peak.mif -disp disp.mif 
+    # OUTPUTS: -afd afd.mif -peak peak.mif -disp disp.mif 
+    n_fod2fixel = Node(
+        interface= fod2fixelfunc.fod2fixel(
+           fmls_peak_value = 0,
+           fmls_integral = 0.10,
+           out_file = 'wmfixels',
+           #afd_file = 'afd.mif',
+           peak_file = 'peak.mif',
+           disp_file = 'disp.mif'
+           
+        ),
+        name='n_fod2fixel'
+    )
+    # obtain wm fibre image as input
+    wf.connect([
+        (n_dwi2fod, n_fod2fixel, [('wm_odf', 'in_file')])
+    ])
+    # ouputs of fod2fixel
+    wf.connect([
+        (n_fod2fixel, n_datasink, [('out_file', 'wmfixels')])
+    ]) 
+    wf.connect([
+        (n_fod2fixel, n_datasink, [('afd_file', 'afd.mif')])
+    ]) 
+    wf.connect([
+        (n_fod2fixel, n_datasink, [('peak_file', 'peak.mif')])
+    ]) 
+    wf.connect([
+        (n_fod2fixel, n_datasink, [('disp_file', 'disp.mif')])
+    ]) 
+
+    ## Fixel2peaks 
+    n_fixel2peaks = Node(
+        interface= fixel2peaksfunc.fixel2peaks(
+           out_file = 'peaks_wmdirections.mif',
+           number = 1
+        ),
+        name='n_fixel2peaks'
+    )
+    # obtain directions file in output folder of fod2fixel, as input
+    wf.connect([
+        (n_fod2fixel, n_fixel2peaks, [('out_file', 'in_file')])
+    ])
+    # ouputs of fixel2peaks
+    wf.connect([
+        (n_fixel2peaks, n_datasink, [('out_file', 'peaks_wmdirections.mif')])
+    ]) 
+   
+    #mrmath to find normalised value of peak WM directions
+    n_mrmath = Node(
+        interface=mrt.MRMath(
+            axis = 3,
+            operation = 'norm',
+            out_file = 'norm_peaks_wmdirections.mif'
+        ),
+        name='n_mrmath'
+    )
+
+    wf.connect([
+        (n_fixel2peaks, n_mrmath, [('out_file', 'in_file')])
+    ])
+
+    wf.connect([
+        (n_mrmath, n_datasink, [('out_file', 'norm_peaks_wmdirections.mif')])
+    ]) 
+
+    # mrcalc to divide peak WM direction by normalised value
+    n_mrcalc = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'divide',
+            out_file = 'wm_peak_dir.mif'
+        ),
+        name='n_mrcalc'
+    )
+
+    wf.connect([
+        (n_fixel2peaks, n_mrcalc, [('out_file', 'in_file2')])
+    ])
+
+    wf.connect([
+        (n_mrmath, n_mrcalc, [('out_file', 'in_file1')])
+    ])
+
+    wf.connect([
+        (n_mrcalc, n_datasink, [('out_file', 'WM_peak_dir.mif')])
+    ])
+
+    #mrconvert to extract Z component of peak directions
+    n_mrconvert2 = Node(
+        interface=utils.MRConvert(
+            out_file = 'Zpeak_WM_Directions.mif',
+            coord = [3, 2]
+        ),
+        name='n_mrconvert2'
+    )
+
+    wf.connect([
+        (n_mrcalc, n_mrconvert2, [('out_file', 'in_file')])
+    ])
+
+    wf.connect([
+        (n_mrconvert2, n_datasink, [('out_file', 'Zpeak_WM_Directions.mif')])
+    ]) 
+    
 #################################################################################3
     return wf
 
