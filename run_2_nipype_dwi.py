@@ -18,6 +18,7 @@ import fod2fixel_function as fod2fixelfunc
 import fixel2peaks_function as fixel2peaksfunc
 import mrcalc_function as mrcalcfunc
 import utils as utils
+import tensor2metric_function as tensor2metricfunc
 
 #import fixel2peaks_func as fixel2peaksfunc
 #import mrcalc_func as mrcalcfunc
@@ -326,11 +327,11 @@ def create_DWI_workflow(
     )
 
     wf.connect([
-        (n_fixel2peaks, n_mrcalc, [('out_file', 'in_file2')])
+        (n_fixel2peaks, n_mrcalc, [('out_file', 'in_file1')])
     ])
 
     wf.connect([
-        (n_mrmath, n_mrcalc, [('out_file', 'in_file1')])
+        (n_mrmath, n_mrcalc, [('out_file', 'in_file2')])
     ])
 
     wf.connect([
@@ -353,7 +354,223 @@ def create_DWI_workflow(
     wf.connect([
         (n_mrconvert2, n_datasink, [('out_file', 'Zpeak_WM_Directions.mif')])
     ]) 
+
+    # mrcalc to find absolute value
+    n_mrcalc2 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'abs',
+            out_file = 'absZpeak_WM_Directions.mif'
+        ),
+        name='n_mrcalc2'
+    )
+
+    wf.connect([
+        (n_mrconvert2, n_mrcalc2, [('out_file', 'in_file1')])
+    ])
+
+    wf.connect([
+        (n_mrcalc2, n_datasink, [('out_file', 'absZpeak_WM_Directions.mif')])
+    ]) 
+
+    # mrcalc to get angle by doing inverse cosine
+    n_mrcalc3 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'acos',
+            out_file = 'acosZpeak_WM_Directions.mif'
+        ),
+        name='n_mrcalc3'
+    )
+
+    wf.connect([
+        (n_mrcalc2, n_mrcalc3, [('out_file', 'in_file1')])
+    ])
+
+    wf.connect([
+        (n_mrcalc3, n_datasink, [('out_file', 'acosZpeak_WM_Directions.mif')])
+    ]) 
     
+    # mrcalc to convert angle to degrees
+    n_mrcalc4 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'multiply',
+            operand = 180,
+            out_file = 'Fixel1_Z_angle.mif'
+        ),
+        name='n_mrcalc4'
+    )
+
+    wf.connect([
+        (n_mrcalc3, n_mrcalc4, [('out_file', 'in_file1')])
+    ])
+
+    wf.connect([
+        (n_mrcalc4, n_datasink, [('out_file', 'Fixel1_Z_angle.mif')])
+    ]) 
+
+    n_mrcalc5 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'divide',
+            operand = 3.14159265,
+            out_file = 'Fixel1_Z_cos_deg.mif'
+        ),
+        name='n_mrcalc5'
+    )
+
+    wf.connect([
+        (n_mrcalc4, n_mrcalc5, [('out_file', 'in_file1')])
+    ])
+
+    wf.connect([
+        (n_mrcalc5, n_datasink, [('out_file', 'Fixel1_Z_cos_deg.mif')])
+    ]) 
+
+    ## B) Tensor-based analysis
+    #dwi2tensor
+    n_dwi2tensor = Node(
+        interface=mrt.FitTensor(
+            out_file = 'dti.mif'
+        ),
+        name='n_dwi2tensor'
+    )
+
+    wf.connect([
+        (n_dwibiascorrect, n_dwi2tensor, [('out_file', 'in_file')])
+    ])
+
+    wf.connect([
+        (n_dwi2mask, n_dwi2tensor, [('out_file', 'in_mask')])
+    ])
+
+    wf.connect([
+        (n_dwi2tensor, n_datasink, [('out_file', 'dt.mif')])
+    ]) 
+
+    #tensor2metric 
+    n_tensor2metric = Node(
+        interface= tensor2metricfunc.tensor2metric(
+            modulate = 'none',
+            num = 1,
+            vector_file = 'eigenvector.mif'
+        ),
+        name='n_tensor2metric'
+    )
+
+    wf.connect([
+        (n_dwi2tensor, n_tensor2metric, [('out_file', 'input_file')])
+    ])
+
+    wf.connect([
+        (n_tensor2metric, n_datasink, [('vector_file', 'eigenvector.mif')])
+    ]) 
+
+    #mrconvert to get Z eigenvector
+    n_mrconvert3 = Node(
+        interface=utils.MRConvert(
+            coord = [3, 2],
+            out_file = 'eigenvectorZ.mif'
+        ),
+        name='n_mrconvert3'
+    )
+
+    wf.connect([
+        (n_tensor2metric, n_mrconvert3, [('vector_file', 'in_file')])
+    ])
+
+    wf.connect([
+        (n_mrconvert3, n_datasink, [('out_file', 'eigenvectorZ.mif')])
+    ]) 
+
+    #ALL SUBSEQUENT STEPS GET ANGLE IN DEGREES
+    # mrcalc to find absolute value
+    n_mrcalc6 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'abs',
+            out_file = 'abs_eigenvectorZ.mif'
+        ),
+        name='n_mrcalc6'
+    )
+
+    wf.connect([
+        (n_mrconvert3, n_mrcalc6, [('out_file', 'in_file1')])
+    ])
+
+    wf.connect([
+        (n_mrcalc6, n_datasink, [('out_file', 'abs_eigenvectorZ.mif')])
+    ]) 
+
+    # mrcalc to get angle by doing inverse cosine
+    n_mrcalc7 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'acos',
+            out_file = 'acos_eigenvectorZ.mif'
+        ),
+        name='n_mrcalc7'
+    )
+
+    wf.connect([
+        (n_mrcalc6, n_mrcalc7, [('out_file', 'in_file1')])
+    ])
+
+    wf.connect([
+        (n_mrcalc7, n_datasink, [('out_file', 'acos_eigenvectorZ.mif')])
+    ]) 
+
+    # mrcalc to convert angle to degrees
+    n_mrcalc8 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'multiply',
+            operand = 180,
+            out_file = 'degrees_eigenvectorZ.mif'
+        ),
+        name='n_mrcalc8'
+    )
+
+    wf.connect([
+        (n_mrcalc7, n_mrcalc8, [('out_file', 'in_file1')])
+    ])
+
+    wf.connect([
+        (n_mrcalc8, n_datasink, [('out_file', 'degrees_eigenvectorZ.mif')])
+    ]) 
+
+    n_mrcalc9 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'divide',
+            operand = 3.14159265,
+            out_file = 'dti_z_cos_deg.mif'
+        ),
+        name='n_mrcalc9'
+    )
+
+    wf.connect([
+        (n_mrcalc8, n_mrcalc9, [('out_file', 'in_file1')])
+    ])
+
+    wf.connect([
+        (n_mrcalc9, n_datasink, [('out_file', 'dti_z_cos_deg.mif')])
+    ]) 
+
+    # Difference image between fixel based and tensor based outputs
+    n_mrcalc10 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'subtract',
+            out_file = 'diff_imag_tensor_minus_fixel.mif'
+        ),
+        name='n_mrcalc10'
+    )
+
+    wf.connect([
+        (n_mrcalc9, n_mrcalc10, [('out_file', 'in_file1')])
+    ])
+
+    wf.connect([
+        (n_mrcalc5, n_mrcalc10, [('out_file', 'in_file2')])
+    ])
+
+    wf.connect([
+        (n_mrcalc10, n_datasink, [('out_file', 'diff_imag_tensor_minus_fixel.mif')])
+    ]) 
+
 #################################################################################3
     return wf
 

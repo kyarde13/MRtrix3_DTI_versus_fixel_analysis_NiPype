@@ -6,15 +6,15 @@ from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, Comma
 from nipype.interfaces.mrtrix3.base import MRTrix3BaseInputSpec, MRTrix3Base
 
 class MRCalcInputSpec(MRTrix3BaseInputSpec):
-    in_file1 = traits.String(
-        exists=True, argstr="%s", mandatory=True, position=-3, desc="input image 1"
+    in_file1 = File(
+        exists=True, argstr="%s", mandatory=True, position=-4, desc="input image 1"
     )
     # Either perform operation with another fiel (in_file2) or a constant number (operand)
     in_file2 = File(
-        exists=True, argstr="%s", mandatory=False, position=-4, desc="input image 2"
+        exists=True, argstr="%s", mandatory=False, position=-3, desc="input image 2"
     )
-    operand = traits.Int(
-        0, argstr="-axis %d", mandatory=False, position=-4, desc="specfied number to perform operation with"
+    operand = traits.Float(
+        argstr="%.9f", mandatory=False, position=-3, desc="specfied number to perform operation with"
     )
     out_file = File(argstr="%s", mandatory=True, position=-1, desc="output image")
     operation = traits.Enum(
