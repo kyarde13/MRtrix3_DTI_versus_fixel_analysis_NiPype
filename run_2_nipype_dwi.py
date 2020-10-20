@@ -78,14 +78,16 @@ def create_DWI_workflow(
 
     wf.connect([
         (n_selectfiles, n_datasink, [('all_b0_PA', 'all_b0_PA_unchanged')]),
-        (n_denoise, n_datasink, [('out_file', 'all_b0_PA_denoised')])
+        (n_denoise, n_datasink, [('out_file', 'DWI_all_denoised')])
     ])
 
 ########## I'VE ADDED IN ##########################################################################
     # MRDeGibbs
     # https://nipype.readthedocs.io/en/latest/api/generated/nipype.interfaces.mrtrix3.preprocess.html
     n_degibbs = Node(
-        interface=mrt.MRDeGibbs(),
+        interface=mrt.MRDeGibbs(
+            out_file = 'DWI_all_denoised_degibbs.mif'
+        ),
         name='n_degibbs'
     )
     wf.connect([
@@ -93,7 +95,7 @@ def create_DWI_workflow(
     ])
 
     wf.connect([
-        (n_degibbs, n_datasink, [('out_file', 'all_b0_PA_degibbs')])
+        (n_degibbs, n_datasink, [('out_file', 'DWI_all_denoised_degibbs.mif')])
     ])
 
    # DWI Extract
@@ -161,12 +163,9 @@ def create_DWI_workflow(
     # DWI bias correct
     n_dwibiascorrect = Node(
         interface = preprocess.DWIBiasCorrect(
-            #out_file = 'ANTSpreprocessedDWIs.mif',
             use_ants = True
         ),
         name = 'n_dwibiascorrect',
-        #use_ants = mrt.DWIBiasCorrect().inputs.use_ants,
-        #use_fsl = mrt.DWIBiasCorrect().inputs.use_fsl,
     )
 
     wf.connect([
@@ -249,13 +248,10 @@ def create_DWI_workflow(
         (n_dwi2fod, n_datasink, [('csf_odf', 'csffod.mif')])
     ])
 
-
     #fod2fixel wmfod.mif wmfixels -fmls_peak_value 0 -fmls_integral 0.10 -afd afd.mif -peak peak.mif -disp disp.mif 
     # OUTPUTS: -afd afd.mif -peak peak.mif -disp disp.mif 
     n_fod2fixel = Node(
         interface= fod2fixelfunc.fod2fixel(
-           fmls_peak_value = 0,
-           fmls_integral = 0.10,
            out_file = 'wmfixels',
            #afd_file = 'afd.mif',
            peak_file = 'peak.mif',
@@ -264,6 +260,10 @@ def create_DWI_workflow(
         ),
         name='n_fod2fixel'
     )
+    # let the peak value parameter be trialed as multiple values
+    n_fod2fixel.iterables = ('fmls_peak_value', [0, 0.10, 0.50])
+    n_fod2fixel.iterables = ('fmls_integral', [0, 0.10, 0.50])
+    
     # obtain wm fibre image as input
     wf.connect([
         (n_dwi2fod, n_fod2fixel, [('wm_odf', 'in_file')])
@@ -448,7 +448,7 @@ def create_DWI_workflow(
     #tensor2metric 
     n_tensor2metric = Node(
         interface= tensor2metricfunc.tensor2metric(
-            modulate = 'none',
+            modulate = 'FA',
             num = 1,
             vector_file = 'eigenvector.mif'
         ),

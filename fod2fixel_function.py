@@ -11,11 +11,12 @@ class fod2fixelInputSpec(MRTrix3BaseInputSpec):
     )
     #out_file is a folder
     out_file = Directory(argstr="%s", usedefault=True, mandatory=True, position=-4, desc="output folder")
-    fmls_peak_value = traits.Int(
-        0, argstr="-fmls_peak_value %d", desc="any lobe with a maximal peak amplitude smaller than this threshold will be discarded"
+    fmls_peak_value = traits.Float(
+        argstr="-fmls_peak_value %d", desc="any lobe with a maximal peak amplitude smaller than this threshold will be discarded"
     )
+    
     fmls_integral = traits.Float(
-        0.10, argstr="-fmls_integral %f", desc="any lobe with an integral smaller than this threshold will be discarded"
+        argstr="-fmls_integral %f", desc="any lobe with an integral smaller than this threshold will be discarded"
     )
     afd_file = File(
         usedefault=True, argstr="-afd %s", position=-3, 
