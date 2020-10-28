@@ -29,7 +29,7 @@ class tensor2metricInputSpec(MRTrix3BaseInputSpec):
         desc="specify how to modulate (deault = FA)"
     )
     num = traits.Int(
-        1, argstr="-num %d", mandatory = False, position=-2, desc="specify the desired eigenvalue/eigenvector(s)"
+        argstr="-num %d", mandatory = False, position=-2, desc="specify the desired eigenvalue/eigenvector(s)"
     )
     
 

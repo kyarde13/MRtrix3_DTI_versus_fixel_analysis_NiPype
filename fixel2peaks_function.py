@@ -13,7 +13,7 @@ class fixel2peaksInputSpec(MRTrix3BaseInputSpec):
         argstr="%s", mandatory=True, position=-1, desc="input dwi image"
     )
     number = traits.Int(
-        1, argstr="-number %d", desc="maximum number of fixels in each voxel"
+        argstr="-number %d", desc="maximum number of fixels in each voxel"
     )
     
 

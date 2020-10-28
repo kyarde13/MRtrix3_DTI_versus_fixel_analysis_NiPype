@@ -248,6 +248,45 @@ def create_DWI_workflow(
         (n_dwi2fod, n_datasink, [('csf_odf', 'csffod.mif')])
     ])
 
+    #mrconvert to extract Z component of wmfod
+    n_mrconvert_fod = Node(
+        interface=utils.MRConvert(
+            out_file = 'Zwmfod.mif',
+            coord = [3, 0]
+        ),
+        name='n_mrconvert_fod'
+    )
+
+    wf.connect([
+        (n_dwi2fod, n_mrconvert_fod, [('wm_odf', 'in_file')])
+    ])
+
+    wf.connect([
+        (n_mrconvert_fod, n_datasink, [('out_file', 'Zwmfod.mif')])
+    ]) 
+
+    # Concatenate all wm, gm, csf fod files to see their distribution throughout Brain
+    n_mrcat_fod = Node(
+        interface=mrcatfunc.MRCat(
+            out_file = 'vf.mif'
+        ),
+        name='n_mrcat_fod'
+    )
+    # Connect Zwmfod, gmfod and csffod as inputs
+    wf.connect([
+        (n_mrconvert_fod, n_mrcat_fod, [('out_file', 'in_file1')])
+    ])
+    wf.connect([
+        (n_dwi2fod, n_mrcat_fod, [('gm_odf', 'in_file2')])
+    ])
+    wf.connect([
+        (n_dwi2fod, n_mrcat_fod, [('csf_odf', 'in_file3')])
+    ])
+    # Output the mrcat file into file into 'vf.mif'
+    wf.connect([
+        (n_mrcat_fod, n_datasink, [('out_file', 'vf.mif')])
+    ]) 
+
     #fod2fixel wmfod.mif wmfixels -fmls_peak_value 0 -fmls_integral 0.10 -afd afd.mif -peak peak.mif -disp disp.mif 
     # OUTPUTS: -afd afd.mif -peak peak.mif -disp disp.mif 
     n_fod2fixel = Node(
@@ -285,11 +324,13 @@ def create_DWI_workflow(
     ## Fixel2peaks 
     n_fixel2peaks = Node(
         interface= fixel2peaksfunc.fixel2peaks(
-           out_file = 'peaks_wmdirections.mif',
-           number = 1
+           out_file = 'peaks_wmdirections.mif'
         ),
         name='n_fixel2peaks'
     )
+
+    n_fixel2peaks.iterables = ('number', [1, 2, 3])
+
     # obtain directions file in output folder of fod2fixel, as input
     wf.connect([
         (n_fod2fixel, n_fixel2peaks, [('out_file', 'in_file')])
@@ -448,7 +489,7 @@ def create_DWI_workflow(
     #tensor2metric 
     n_tensor2metric = Node(
         interface= tensor2metricfunc.tensor2metric(
-            modulate = 'FA',
+            modulate = 'none',
             num = 1,
             vector_file = 'eigenvector.mif'
         ),

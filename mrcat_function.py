@@ -12,6 +12,9 @@ class MRCatInputSpec(MRTrix3BaseInputSpec):
     in_file2 = File(
         exists=True, argstr="%s", mandatory=True, position=-3, desc="input image 2"
     )
+    in_file3 = File(
+        exists=True, argstr="%s", mandatory=False, position=-4, desc="input image 3"
+    )
     out_file = File(argstr="%s", mandatory=True, position=-1, desc="output image")
     axis = traits.Int(
         0, argstr="-axis %d", desc="specfied axis to perform the operation along"
