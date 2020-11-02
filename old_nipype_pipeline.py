@@ -11,7 +11,6 @@ from nipype.pipeline.engine import Workflow, Node, MapNode
 
 import argparse
 
-# Import all created functions that implement MRtrix commands
 import mrcat_function as mrcatfunc
 import preproc_function as preprocfunc
 import preprocess as preprocess
@@ -20,7 +19,10 @@ import fixel2peaks_function as fixel2peaksfunc
 import mrcalc_function as mrcalcfunc
 import utils as utils
 import tensor2metric_function as tensor2metricfunc
-import mrthreshold_function as mrthresholdfunc
+
+#import fixel2peaks_func as fixel2peaksfunc
+#import mrcalc_func as mrcalcfunc
+#import tensor2metric_func as tensor2metricfunc
 
 def create_DWI_workflow(
     subject_list,
@@ -57,11 +59,9 @@ def create_DWI_workflow(
         (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
     ])
 
-## IMPLEMENTING MRTRIX COMMANDS FOR IMAGE ANALYSIS
-
-## 1) Preprocessing of Data
+  
+# DWIDenoise
 # https://nipype.readthedocs.io/en/latest/api/generated/nipype.interfaces.mrtrix3.preprocess.html
-# DWIDenoise to remove Gaussian noise
     n_denoise = Node(
         interface=mrt.DWIDenoise(),
         name='n_denoise'
@@ -69,34 +69,36 @@ def create_DWI_workflow(
     wf.connect([
         (n_selectfiles, n_denoise, [('DWI_all', 'in_file')])
     ])
+
     # datasink
     n_datasink = Node(
         interface=DataSink(base_directory=out_dir),
         name='datasink'
     )
-    # output denoised data into 'DWI_all_denoised'
+
     wf.connect([
         (n_selectfiles, n_datasink, [('all_b0_PA', 'all_b0_PA_unchanged')]),
         (n_denoise, n_datasink, [('out_file', 'DWI_all_denoised')])
     ])
 
-# MRDeGibbs to remove Gibbs ringing artifact
+########## I'VE ADDED IN ##########################################################################
+    # MRDeGibbs
+    # https://nipype.readthedocs.io/en/latest/api/generated/nipype.interfaces.mrtrix3.preprocess.html
     n_degibbs = Node(
         interface=mrt.MRDeGibbs(
             out_file = 'DWI_all_denoised_degibbs.mif'
         ),
         name='n_degibbs'
     )
-    # input denoised data into degibbs function
     wf.connect([
         (n_denoise, n_degibbs, [('out_file', 'in_file')])
     ])
-    # output degibbs data into 'DWI_all_denoised_degibbs.mif'
+
     wf.connect([
         (n_degibbs, n_datasink, [('out_file', 'DWI_all_denoised_degibbs.mif')])
     ])
 
-# DWI Extract to extract b0 volumes from multi-b image data
+   # DWI Extract
     n_dwiextract = Node(
         interface=mrt.DWIExtract(
             bzero=True,
@@ -104,16 +106,16 @@ def create_DWI_workflow(
         ),
         name='n_dwiextract'
     )
-    # input degibbs data into dwiextract function
+
     wf.connect([
         (n_degibbs, n_dwiextract, [('out_file', 'in_file')])
     ])
-    # output extracted b0 volume from degibbs data (contains multiple b values)
+
     wf.connect([
         (n_dwiextract, n_datasink, [('out_file', 'noddi_b0_degibbs')])
     ])
 
-# MRcat to combine b0 volumes from input image and reverse phase encoded data
+    # MRcat
     n_mrcat = Node(
         interface=mrcatfunc.MRCat(
             #axis=3,
@@ -121,20 +123,22 @@ def create_DWI_workflow(
         ),
         name='n_mrcat'
     )
-    # input DTI images (all b0 volumes; reverse phase encoded) for concatenating
+
+    # Connect DTI_B0_PA to mrcat node
     wf.connect([
         (n_selectfiles, n_mrcat, [('DTI_B0_PA', 'in_file1')])
     ])
-    # input b0 volumes from NODDI data for concatenating
+
     wf.connect([
         (n_dwiextract, n_mrcat, [('out_file', 'in_file2')])
     ])
-    # output the mrcat file into 'noddi_and_PA_b0s.mif'
+
+    # Output the mrcat file into file 'noddi_and_PA_b0s.mif'
     wf.connect([
         (n_mrcat, n_datasink, [('out_file', 'noddi_and_PA_b0s.mif')])
     ])
 
-# DWIfslpreproc for image pre-processing using FSL?s eddy tool
+    # DWIfslpreproc
     n_dwifslpreproc = Node(
         interface=preprocfunc.DWIFslPreProc(
             out_file = 'preprocessedDWIs.mif',
@@ -142,36 +146,36 @@ def create_DWI_workflow(
         ),
         name='n_dwifslpreproc'
     )
-    # output of degibbs as input for preprocessing
+
+    # Connect output of degibbs to dwifslpreproc node
     wf.connect([
         (n_degibbs, n_dwifslpreproc, [('out_file', 'in_file')])
     ])
-    # output of mrcat (extracted b0 volumes) as se_epi input
+    # Connect output of mrcat to se_epi input
     wf.connect([
         (n_mrcat, n_dwifslpreproc, [('out_file', 'se_epi_file')])
     ])
-    # output of dwifslpreproc into 'preprocessedDWIs.mif'
+    # Put output of dwifslpreproc into 'preprocessedDWIs.mif'
     wf.connect([
         (n_dwifslpreproc, n_datasink, [('out_file', 'preprocessedDWIs.mif')])
     ])
 
-# DWI bias correct for B1 field inhomogeneity correction
+    # DWI bias correct
     n_dwibiascorrect = Node(
         interface = preprocess.DWIBiasCorrect(
             use_ants = True
         ),
         name = 'n_dwibiascorrect',
     )
-    # input preprocessed data
+
     wf.connect([
         (n_dwifslpreproc, n_dwibiascorrect, [('out_file', 'in_file')])
     ])
-    # output biascorrect data into 'ANTSpreprocessedDWIs.mif'
     wf.connect([
         (n_dwibiascorrect, n_datasink, [('out_file', 'ANTSpreprocessedDWIs.mif')])
     ]) 
 
-#DWI2mask to compute whole brain mask from bias corrected data
+    #DWI2mask
     n_dwi2mask = Node(
         interface=mrt.BrainMask(
             out_file = 'mask.mif'
@@ -185,9 +189,8 @@ def create_DWI_workflow(
         (n_dwi2mask, n_datasink, [('out_file', 'mask.mif')])
     ]) 
 
-###########################################################################
-## 2) Fixel-based analysis
-# DWI2response for etimation of response function for spherical deconvolution
+    ## A) Fixel-based analysis
+    #DWI2response
     n_dwi2response = Node(
         interface=mrt.ResponseSD(
             algorithm = 'dhollander',
@@ -197,11 +200,10 @@ def create_DWI_workflow(
         ),
         name='n_dwi2response'
     )
-    # input bias corrected data for response function estimation
+
     wf.connect([
         (n_dwibiascorrect, n_dwi2response, [('out_file', 'in_file')])
     ])
-    # output WM, GM, CSF response text files
     wf.connect([
         (n_dwi2response, n_datasink, [('wm_file', 'wm_res.txt')])
     ]) 
@@ -212,7 +214,7 @@ def create_DWI_workflow(
         (n_dwi2response, n_datasink, [('csf_file', 'csf_res.txt')])
     ]) 
 
-# DWI2fod for fibre orientation distribution estimation (FOD)
+    #DWI2fod
     n_dwi2fod = Node(
         interface=mrt.ConstrainedSphericalDeconvolution(
             algorithm = 'msmt_csd',
@@ -222,7 +224,7 @@ def create_DWI_workflow(
         ),
         name='n_dwi2fod'
     )
-    # utilise dwi2fod response files as input
+    # connect outputs of dwi2fod into dwi2response
     wf.connect([
         (n_dwibiascorrect, n_dwi2fod, [('out_file', 'in_file')])
     ])
@@ -235,7 +237,7 @@ def create_DWI_workflow(
     wf.connect([
         (n_dwi2response, n_dwi2fod, [('csf_file', 'csf_txt')])
     ])  
-    # output wm, gm and csf FODs for saving 
+    # output wmfod file from dwi2fod
     wf.connect([
         (n_dwi2fod, n_datasink, [('wm_odf', 'wmfod.mif')])
     ])
@@ -246,7 +248,7 @@ def create_DWI_workflow(
         (n_dwi2fod, n_datasink, [('csf_odf', 'csffod.mif')])
     ])
 
-# Mrconvert to extract z component (component w.r.t main field) of WM FOD
+    #mrconvert to extract Z component of wmfod
     n_mrconvert_fod = Node(
         interface=utils.MRConvert(
             out_file = 'Zwmfod.mif',
@@ -254,23 +256,23 @@ def create_DWI_workflow(
         ),
         name='n_mrconvert_fod'
     )
-    # utilise WM fod as input
+
     wf.connect([
         (n_dwi2fod, n_mrconvert_fod, [('wm_odf', 'in_file')])
     ])
-    # output z component of WM FOD
+
     wf.connect([
         (n_mrconvert_fod, n_datasink, [('out_file', 'Zwmfod.mif')])
     ]) 
 
-# MRcat to concatenate all wm, gm, csf fod files to see their distributions throughout Brain
+    # Concatenate all wm, gm, csf fod files to see their distribution throughout Brain
     n_mrcat_fod = Node(
         interface=mrcatfunc.MRCat(
             out_file = 'vf.mif'
         ),
         name='n_mrcat_fod'
     )
-    # connect Zwmfod, gmfod and csffod as inputs
+    # Connect Zwmfod, gmfod and csffod as inputs
     wf.connect([
         (n_mrconvert_fod, n_mrcat_fod, [('out_file', 'in_file1')])
     ])
@@ -280,14 +282,13 @@ def create_DWI_workflow(
     wf.connect([
         (n_dwi2fod, n_mrcat_fod, [('csf_odf', 'in_file3')])
     ])
-    # output the mrcat file into file 'vf.mif'
+    # Output the mrcat file into file into 'vf.mif'
     wf.connect([
         (n_mrcat_fod, n_datasink, [('out_file', 'vf.mif')])
     ]) 
 
-# fod2fixel 
-# Perform segmentation of continuous FODs to produce discrete fixels
-# OUTPUTS: -afd afd.mif -peak peak.mif -disp disp.mif 
+    #fod2fixel wmfod.mif wmfixels -fmls_peak_value 0 -fmls_integral 0.10 -afd afd.mif -peak peak.mif -disp disp.mif 
+    # OUTPUTS: -afd afd.mif -peak peak.mif -disp disp.mif 
     n_fod2fixel = Node(
         interface= fod2fixelfunc.fod2fixel(
            out_file = 'wmfixels',
@@ -301,12 +302,12 @@ def create_DWI_workflow(
     # let the peak value parameter be trialed as multiple values
     n_fod2fixel.iterables = ('fmls_peak_value', [0, 0.10, 0.50])
     n_fod2fixel.iterables = ('fmls_integral', [0, 0.10, 0.50])
-
-    # obtain WM fibre image as input
+    
+    # obtain wm fibre image as input
     wf.connect([
         (n_dwi2fod, n_fod2fixel, [('wm_odf', 'in_file')])
     ])
-    # ouputs of fod2fixel saved
+    # ouputs of fod2fixel
     wf.connect([
         (n_fod2fixel, n_datasink, [('out_file', 'wmfixels')])
     ]) 
@@ -320,26 +321,26 @@ def create_DWI_workflow(
         (n_fod2fixel, n_datasink, [('disp_file', 'disp.mif')])
     ]) 
 
-## Fixel2peaks to convert data in the fixel directory format into 4D image of 3-vectors
+    ## Fixel2peaks 
     n_fixel2peaks = Node(
         interface= fixel2peaksfunc.fixel2peaks(
            out_file = 'peaks_wmdirections.mif'
         ),
         name='n_fixel2peaks'
     )
-    # look at multiple values for maximum number of fixels in each voxel
+
     n_fixel2peaks.iterables = ('number', [1, 2, 3])
 
     # obtain directions file in output folder of fod2fixel, as input
     wf.connect([
         (n_fod2fixel, n_fixel2peaks, [('out_file', 'in_file')])
     ])
-    # ouput of fixel2peaks saved in peaks_wmdirections.mif'
+    # ouputs of fixel2peaks
     wf.connect([
         (n_fixel2peaks, n_datasink, [('out_file', 'peaks_wmdirections.mif')])
     ]) 
    
-# MRmath to find normalised value of peak WM directions
+    #mrmath to find normalised value of peak WM directions
     n_mrmath = Node(
         interface=mrt.MRMath(
             axis = 3,
@@ -348,16 +349,16 @@ def create_DWI_workflow(
         ),
         name='n_mrmath'
     )
-    # input peak fixel data
+
     wf.connect([
         (n_fixel2peaks, n_mrmath, [('out_file', 'in_file')])
     ])
-    # output saved into 'norm_peaks_wmdirections.mif'
+
     wf.connect([
         (n_mrmath, n_datasink, [('out_file', 'norm_peaks_wmdirections.mif')])
     ]) 
 
-# MRcalc to divide peak WM direction by normalised value
+    # mrcalc to divide peak WM direction by normalised value
     n_mrcalc = Node(
         interface=mrcalcfunc.MRCalc(
             operation = 'divide',
@@ -365,20 +366,20 @@ def create_DWI_workflow(
         ),
         name='n_mrcalc'
     )
-    # fixel2peaks image as input 1
+
     wf.connect([
         (n_fixel2peaks, n_mrcalc, [('out_file', 'in_file1')])
     ])
-    # normalised fixel2peak image as input 2
+
     wf.connect([
         (n_mrmath, n_mrcalc, [('out_file', 'in_file2')])
     ])
-    # save output image as 'WM_peak_dir.mif'
+
     wf.connect([
         (n_mrcalc, n_datasink, [('out_file', 'WM_peak_dir.mif')])
     ])
 
-# MRconvert to extract Z component of peak directions
+    #mrconvert to extract Z component of peak directions
     n_mrconvert2 = Node(
         interface=utils.MRConvert(
             out_file = 'Zpeak_WM_Directions.mif',
@@ -386,16 +387,16 @@ def create_DWI_workflow(
         ),
         name='n_mrconvert2'
     )
-    # input normalised peak direction file
+
     wf.connect([
         (n_mrcalc, n_mrconvert2, [('out_file', 'in_file')])
     ])
-    # save ouptut as 'Zpeak_WM_Directions.mif'
+
     wf.connect([
         (n_mrconvert2, n_datasink, [('out_file', 'Zpeak_WM_Directions.mif')])
     ]) 
 
-# MRcalc to find absolute value of peak fibre directions
+    # mrcalc to find absolute value
     n_mrcalc2 = Node(
         interface=mrcalcfunc.MRCalc(
             operation = 'abs',
@@ -403,16 +404,16 @@ def create_DWI_workflow(
         ),
         name='n_mrcalc2'
     )
-    # input z peaks image
+
     wf.connect([
         (n_mrconvert2, n_mrcalc2, [('out_file', 'in_file1')])
     ])
-    # save output as 'absZpeak_WM_Directions.mif'
+
     wf.connect([
         (n_mrcalc2, n_datasink, [('out_file', 'absZpeak_WM_Directions.mif')])
     ]) 
 
-# MRcalc to get angle by doing inverse cosine
+    # mrcalc to get angle by doing inverse cosine
     n_mrcalc3 = Node(
         interface=mrcalcfunc.MRCalc(
             operation = 'acos',
@@ -420,16 +421,16 @@ def create_DWI_workflow(
         ),
         name='n_mrcalc3'
     )
-    # input normalised z component of peaks image
+
     wf.connect([
         (n_mrcalc2, n_mrcalc3, [('out_file', 'in_file1')])
     ])
-    # save ouput as 'acosZpeak_WM_Directions.mif'
+
     wf.connect([
         (n_mrcalc3, n_datasink, [('out_file', 'acosZpeak_WM_Directions.mif')])
     ]) 
     
-# MRcalc to convert angle of peak fibre (w.r.t z axis), to degrees
+    # mrcalc to convert angle to degrees
     n_mrcalc4 = Node(
         interface=mrcalcfunc.MRCalc(
             operation = 'multiply',
@@ -438,16 +439,15 @@ def create_DWI_workflow(
         ),
         name='n_mrcalc4'
     )
-    # input inverse cosine image of peak fibre
+
     wf.connect([
         (n_mrcalc3, n_mrcalc4, [('out_file', 'in_file1')])
     ])
-    # output image as 'Fixel1_Z_angle.mif'
+
     wf.connect([
         (n_mrcalc4, n_datasink, [('out_file', 'Fixel1_Z_angle.mif')])
     ]) 
 
-# MRcalc to divide by pi to finish converting from radians to degrees
     n_mrcalc5 = Node(
         interface=mrcalcfunc.MRCalc(
             operation = 'divide',
@@ -456,38 +456,37 @@ def create_DWI_workflow(
         ),
         name='n_mrcalc5'
     )
-    # input image multiplied by 180
+
     wf.connect([
         (n_mrcalc4, n_mrcalc5, [('out_file', 'in_file1')])
     ])
-    # save output as 'Fixel1_Z_cos_deg.mif'
+
     wf.connect([
         (n_mrcalc5, n_datasink, [('out_file', 'Fixel1_Z_cos_deg.mif')])
     ]) 
 
-###########################################################################
-## 3) Tensor-based analysis
-# dwi2tensor to compute densor from biascorrected DWI image
+    ## B) Tensor-based analysis
+    #dwi2tensor
     n_dwi2tensor = Node(
         interface=mrt.FitTensor(
             out_file = 'dti.mif'
         ),
         name='n_dwi2tensor'
     )
-    # input bias corrected image
+
     wf.connect([
         (n_dwibiascorrect, n_dwi2tensor, [('out_file', 'in_file')])
     ])
-    # utilise mask to only compute tensors for regions of Brain
+
     wf.connect([
         (n_dwi2mask, n_dwi2tensor, [('out_file', 'in_mask')])
     ])
-    # output data into 'dt.mif'
+
     wf.connect([
         (n_dwi2tensor, n_datasink, [('out_file', 'dt.mif')])
     ]) 
 
-# tensor2metric to convert tensors to generate maps of tensor-derived parameters
+    #tensor2metric 
     n_tensor2metric = Node(
         interface= tensor2metricfunc.tensor2metric(
             modulate = 'none',
@@ -496,16 +495,16 @@ def create_DWI_workflow(
         ),
         name='n_tensor2metric'
     )
-    # input tensor image
+
     wf.connect([
         (n_dwi2tensor, n_tensor2metric, [('out_file', 'input_file')])
     ])
-    # save output eigenvectors of the diffusion tensor
+
     wf.connect([
         (n_tensor2metric, n_datasink, [('vector_file', 'eigenvector.mif')])
     ]) 
 
-# MRconvert to get eigenvector w.r.t z direction (main field)
+    #mrconvert to get Z eigenvector
     n_mrconvert3 = Node(
         interface=utils.MRConvert(
             coord = [3, 2],
@@ -513,17 +512,17 @@ def create_DWI_workflow(
         ),
         name='n_mrconvert3'
     )
-    # input eigenvector file from tensor2metric
+
     wf.connect([
         (n_tensor2metric, n_mrconvert3, [('vector_file', 'in_file')])
     ])
-    # save output as 'eigenvectorZ.mif'
+
     wf.connect([
         (n_mrconvert3, n_datasink, [('out_file', 'eigenvectorZ.mif')])
     ]) 
 
-# ALL SUBSEQUENT STEPS GET ANGLE IN DEGREES
-# MRcalc to find absolute value of z eigenvector file
+    #ALL SUBSEQUENT STEPS GET ANGLE IN DEGREES
+    # mrcalc to find absolute value
     n_mrcalc6 = Node(
         interface=mrcalcfunc.MRCalc(
             operation = 'abs',
@@ -531,16 +530,16 @@ def create_DWI_workflow(
         ),
         name='n_mrcalc6'
     )
-    # z eigenvector image as input
+
     wf.connect([
         (n_mrconvert3, n_mrcalc6, [('out_file', 'in_file1')])
     ])
-    # save output as 'abs_eigenvectorZ.mif'
+
     wf.connect([
         (n_mrcalc6, n_datasink, [('out_file', 'abs_eigenvectorZ.mif')])
     ]) 
 
-# MRcalc to get angle by doing inverse cosine
+    # mrcalc to get angle by doing inverse cosine
     n_mrcalc7 = Node(
         interface=mrcalcfunc.MRCalc(
             operation = 'acos',
@@ -548,16 +547,16 @@ def create_DWI_workflow(
         ),
         name='n_mrcalc7'
     )
-    # input absolute value of z eigenvector image
+
     wf.connect([
         (n_mrcalc6, n_mrcalc7, [('out_file', 'in_file1')])
     ])
-    # save output as 'acos_eigenvectorZ.mif'
+
     wf.connect([
         (n_mrcalc7, n_datasink, [('out_file', 'acos_eigenvectorZ.mif')])
     ]) 
 
-# MRcalc to convert angle to degrees
+    # mrcalc to convert angle to degrees
     n_mrcalc8 = Node(
         interface=mrcalcfunc.MRCalc(
             operation = 'multiply',
@@ -566,16 +565,15 @@ def create_DWI_workflow(
         ),
         name='n_mrcalc8'
     )
-    # input inverse cosine image of z eigenvector
+
     wf.connect([
         (n_mrcalc7, n_mrcalc8, [('out_file', 'in_file1')])
     ])
-    # save output as 'degrees_eigenvectorZ.mif'
+
     wf.connect([
         (n_mrcalc8, n_datasink, [('out_file', 'degrees_eigenvectorZ.mif')])
     ]) 
 
-# MRcalc to divide by pi to finish converting from radians to degrees
     n_mrcalc9 = Node(
         interface=mrcalcfunc.MRCalc(
             operation = 'divide',
@@ -584,16 +582,16 @@ def create_DWI_workflow(
         ),
         name='n_mrcalc9'
     )
-    # input z eigenvector image multiplied by 180
+
     wf.connect([
         (n_mrcalc8, n_mrcalc9, [('out_file', 'in_file1')])
     ])
-    # save output as 'dti_z_cos_deg.mif'
+
     wf.connect([
         (n_mrcalc9, n_datasink, [('out_file', 'dti_z_cos_deg.mif')])
     ]) 
 
-# MRcalc to give difference image between fixel based and tensor based outputs
+    # Difference image between fixel based and tensor based outputs
     n_mrcalc10 = Node(
         interface=mrcalcfunc.MRCalc(
             operation = 'subtract',
@@ -601,40 +599,20 @@ def create_DWI_workflow(
         ),
         name='n_mrcalc10'
     )
-    # input fixel based image of Brain
+
     wf.connect([
         (n_mrcalc9, n_mrcalc10, [('out_file', 'in_file1')])
     ])
-    # input tensor based image of whole Brain
+
     wf.connect([
         (n_mrcalc5, n_mrcalc10, [('out_file', 'in_file2')])
     ])
-    # output difference image as 'diff_imag_tensor_minus_fixel.mif'
+
     wf.connect([
         (n_mrcalc10, n_datasink, [('out_file', 'diff_imag_tensor_minus_fixel.mif')])
     ]) 
 
-
-###########################################################################
-## 4) Tensor based analysis on WM fibres only (NOT WHOLE BRAIN TENSORS)
-
-# MRthreshold to create WM mask from WM FOD (created earlier)
-    n_mrthreshold = Node(
-        interface=mrthresholdfunc.MRThreshold(
-            out_file = 'thresholded_wmfod.mif'
-        ),
-        name='n_mrthreshold'
-    )
-    # input WM FOD
-    wf.connect([
-        (n_dwi2fod, n_mrthreshold, [('wm_odf', 'in_file')])
-    ])
-    # output thresholded WM FOD
-    wf.connect([
-        (n_mrthreshold, n_datasink, [('out_file', 'thresholded_wmfod.mif')])
-    ]) 
-
-#################################################################################
+#################################################################################3
     return wf
 
 
