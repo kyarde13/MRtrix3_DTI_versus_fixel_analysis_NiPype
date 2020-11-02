@@ -634,6 +634,149 @@ def create_DWI_workflow(
         (n_mrthreshold, n_datasink, [('out_file', 'thresholded_wmfod.mif')])
     ]) 
 
+# MRconvert to extract 1st volume of thresholded WM FOD
+    n_mrconvert4 = Node(
+        interface=utils.MRConvert(
+            coord = [3, 0],
+            out_file = 'WMmask.mif'
+        ),
+        name='n_mrconvert4'
+    )
+    # input eigenvector file from tensor2metric
+    wf.connect([
+        (n_mrthreshold, n_mrconvert4, [('out_file', 'in_file')])
+    ])
+    # save output as 'WMmask.mif'
+    wf.connect([
+        (n_mrconvert4, n_datasink, [('out_file', 'WMmask.mif')])
+    ]) 
+
+    # MRcalc to multiple WM mask with dti image to get tensors only of WM regions
+    n_mrcalc11 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'multiply',
+            out_file = 'WM_dt.mif'
+        ),
+        name='n_mrcalc11'
+    )
+    # WM mask as input 1
+    wf.connect([
+        (n_mrconvert4, n_mrcalc11, [('out_file', 'in_file1')])
+    ])
+    # dti image as input 2
+    wf.connect([
+        (n_dwi2tensor, n_mrcalc11, [('out_file', 'in_file2')])
+    ]) 
+    # save output as 'WM_dt.mif'
+    wf.connect([
+        (n_mrcalc11, n_datasink, [('out_file', 'WM_dt.mif')])
+    ]) 
+
+    # tensor2metric to convert tensors to generate maps of tensor-derived parameters
+    n_tensor2metric2 = Node(
+        interface= tensor2metricfunc.tensor2metric(
+            modulate = 'none',
+            num = 1,
+            vector_file = 'WMeigenvector.mif'
+        ),
+        name='n_tensor2metric2'
+    )
+    # input tensor image
+    wf.connect([
+        (n_mrcalc11, n_tensor2metric2, [('out_file', 'input_file')])
+    ])
+    # save output eigenvectors of the diffusion tensor
+    wf.connect([
+        (n_tensor2metric2, n_datasink, [('vector_file', 'WMeigenvector.mif')])
+    ])
+
+    # MRconvert to get eigenvector w.r.t z direction (main field)
+    n_mrconvert5 = Node(
+        interface=utils.MRConvert(
+            coord = [3, 2],
+            out_file = 'WMeigenvectorZ.mif'
+        ),
+        name='n_mrconvert5'
+    )
+    # input eigenvector file from tensor2metric
+    wf.connect([
+        (n_tensor2metric2, n_mrconvert5, [('vector_file', 'in_file')])
+    ])
+    # save output as 'eigenvectorZ.mif'
+    wf.connect([
+        (n_mrconvert5, n_datasink, [('out_file', 'WMeigenvectorZ.mif')])
+    ]) 
+
+# ALL SUBSEQUENT STEPS GET ANGLE IN DEGREES
+# MRcalc to find absolute value of z eigenvector file
+    n_mrcalc12 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'abs',
+            out_file = 'WM_abs_eigenvectorZ.mif'
+        ),
+        name='n_mrcalc12'
+    )
+    # z eigenvector image as input
+    wf.connect([
+        (n_mrconvert5, n_mrcalc12, [('out_file', 'in_file1')])
+    ])
+    # save output as 'WM_abs_eigenvectorZ.mif'
+    wf.connect([
+        (n_mrcalc12, n_datasink, [('out_file', 'WM_abs_eigenvectorZ.mif')])
+    ]) 
+    
+# MRcalc to get angle by doing inverse cosine
+    n_mrcalc13 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'acos',
+            out_file = 'acos_WMeigenvectorZ.mif'
+        ),
+        name='n_mrcalc13'
+    )
+    # input absolute value of z eigenvector image
+    wf.connect([
+        (n_mrcalc12, n_mrcalc13, [('out_file', 'in_file1')])
+    ])
+    # save output as 'inv_cos_WMeigenvectorZ.mif'
+    wf.connect([
+        (n_mrcalc13, n_datasink, [('out_file', 'acos_WMeigenvectorZ.mif')])
+    ]) 
+
+# MRcalc to convert angle to degrees
+    n_mrcalc14 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'multiply',
+            operand = 180,
+            out_file = 'degrees_WMeigenvectorZ.mif'
+        ),
+        name='n_mrcalc14'
+    )
+    # input inverse cosine image of WM z eigenvector
+    wf.connect([
+        (n_mrcalc13, n_mrcalc14, [('out_file', 'in_file1')])
+    ])
+    # save output as 'degrees_WMeigenvectorZ.mif'
+    wf.connect([
+        (n_mrcalc14, n_datasink, [('out_file', 'degrees_WMeigenvectorZ.mif')])
+    ]) 
+
+# MRcalc to divide by pi to finish converting from radians to degrees
+    n_mrcalc15 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'divide',
+            operand = 3.14159265,
+            #out_file = 'WMdti_z_cos_deg.mif'
+        ),
+        name='n_mrcalc15'
+    )
+    # input WM z eigenvector image multiplied by 180
+    wf.connect([
+        (n_mrcalc14, n_mrcalc15, [('out_file', 'in_file1')])
+    ])
+    # save output as 'WMdti_z_cos_deg.mif'
+    wf.connect([
+        (n_mrcalc15, n_datasink, [('out_file', 'WMdti_z_cos_deg.mif')])
+    ]) 
 #################################################################################
     return wf
 
