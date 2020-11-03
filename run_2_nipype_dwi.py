@@ -57,7 +57,7 @@ def create_DWI_workflow(
         (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
     ])
 
-## IMPLEMENTING MRTRIX COMMANDS FOR IMAGE ANALYSIS
+########## IMPLEMENTING MRTRIX COMMANDS FOR IMAGE ANALYSIS #######################################
 
 ## 1) Preprocessing of Data
 # https://nipype.readthedocs.io/en/latest/api/generated/nipype.interfaces.mrtrix3.preprocess.html
@@ -171,7 +171,7 @@ def create_DWI_workflow(
         (n_dwibiascorrect, n_datasink, [('out_file', 'ANTSpreprocessedDWIs.mif')])
     ]) 
 
-#DWI2mask to compute whole brain mask from bias corrected data
+# DWI2mask to compute whole brain mask from bias corrected data
     n_dwi2mask = Node(
         interface=mrt.BrainMask(
             out_file = 'mask.mif'
@@ -185,7 +185,7 @@ def create_DWI_workflow(
         (n_dwi2mask, n_datasink, [('out_file', 'mask.mif')])
     ]) 
 
-###########################################################################
+##################################################################################
 ## 2) Fixel-based analysis
 # DWI2response for etimation of response function for spherical deconvolution
     n_dwi2response = Node(
@@ -235,7 +235,7 @@ def create_DWI_workflow(
     wf.connect([
         (n_dwi2response, n_dwi2fod, [('csf_file', 'csf_txt')])
     ])  
-    # output wm, gm and csf FODs for saving 
+    # output WM, GM and CSF FODs for saving 
     wf.connect([
         (n_dwi2fod, n_datasink, [('wm_odf', 'wmfod.mif')])
     ])
@@ -254,7 +254,7 @@ def create_DWI_workflow(
         ),
         name='n_mrconvert_fod'
     )
-    # utilise WM fod as input
+    # utilise WM FOD as input
     wf.connect([
         (n_dwi2fod, n_mrconvert_fod, [('wm_odf', 'in_file')])
     ])
@@ -263,7 +263,7 @@ def create_DWI_workflow(
         (n_mrconvert_fod, n_datasink, [('out_file', 'Zwmfod.mif')])
     ]) 
 
-# MRcat to concatenate all wm, gm, csf fod files to see their distributions throughout Brain
+# MRcat to concatenate all WM, GM, CSF FOD files to see their distributions throughout Brain
     n_mrcat_fod = Node(
         interface=mrcatfunc.MRCat(
             out_file = 'vf.mif'
@@ -320,7 +320,7 @@ def create_DWI_workflow(
         (n_fod2fixel, n_datasink, [('disp_file', 'disp.mif')])
     ]) 
 
-## Fixel2peaks to convert data in the fixel directory format into 4D image of 3-vectors
+# fixel2peaks to convert data in the fixel directory format into 4D image of 3-vectors
     n_fixel2peaks = Node(
         interface= fixel2peaksfunc.fixel2peaks(
            out_file = 'peaks_wmdirections.mif'
@@ -465,9 +465,9 @@ def create_DWI_workflow(
         (n_mrcalc5, n_datasink, [('out_file', 'Fixel1_Z_cos_deg.mif')])
     ]) 
 
-###########################################################################
+##################################################################################
 ## 3) Tensor-based analysis
-# dwi2tensor to compute densor from biascorrected DWI image
+# dwi2tensor to compute tensor from biascorrected DWI image
     n_dwi2tensor = Node(
         interface=mrt.FitTensor(
             out_file = 'dti.mif'
@@ -614,8 +614,7 @@ def create_DWI_workflow(
         (n_mrcalc10, n_datasink, [('out_file', 'diff_imag_tensor_minus_fixel.mif')])
     ]) 
 
-
-###########################################################################
+#####################################################################################
 ## 4) Tensor based analysis on WM fibres only (NOT WHOLE BRAIN TENSORS)
 
 # MRthreshold to create WM mask from WM FOD (created earlier)
@@ -642,7 +641,7 @@ def create_DWI_workflow(
         ),
         name='n_mrconvert4'
     )
-    # input eigenvector file from tensor2metric
+    # input thresholded wmfod
     wf.connect([
         (n_mrthreshold, n_mrconvert4, [('out_file', 'in_file')])
     ])
@@ -651,7 +650,7 @@ def create_DWI_workflow(
         (n_mrconvert4, n_datasink, [('out_file', 'WMmask.mif')])
     ]) 
 
-    # MRcalc to multiple WM mask with dti image to get tensors only of WM regions
+# MRcalc to multiple WM mask with dti image to get tensors only of WM regions
     n_mrcalc11 = Node(
         interface=mrcalcfunc.MRCalc(
             operation = 'multiply',
@@ -672,7 +671,7 @@ def create_DWI_workflow(
         (n_mrcalc11, n_datasink, [('out_file', 'WM_dt.mif')])
     ]) 
 
-    # tensor2metric to convert tensors to generate maps of tensor-derived parameters
+# tensor2metric to convert tensors to generate maps of tensor-derived parameters
     n_tensor2metric2 = Node(
         interface= tensor2metricfunc.tensor2metric(
             modulate = 'none',
@@ -690,7 +689,7 @@ def create_DWI_workflow(
         (n_tensor2metric2, n_datasink, [('vector_file', 'WMeigenvector.mif')])
     ])
 
-    # MRconvert to get eigenvector w.r.t z direction (main field)
+# MRconvert to get eigenvector w.r.t z direction (main field)
     n_mrconvert5 = Node(
         interface=utils.MRConvert(
             coord = [3, 2],
@@ -737,7 +736,7 @@ def create_DWI_workflow(
     wf.connect([
         (n_mrcalc12, n_mrcalc13, [('out_file', 'in_file1')])
     ])
-    # save output as 'inv_cos_WMeigenvectorZ.mif'
+    # save output as 'acos_WMeigenvectorZ.mif'
     wf.connect([
         (n_mrcalc13, n_datasink, [('out_file', 'acos_WMeigenvectorZ.mif')])
     ]) 
@@ -778,7 +777,7 @@ def create_DWI_workflow(
         (n_mrcalc15, n_datasink, [('out_file', 'WMdti_z_cos_deg.mif')])
     ]) 
 
-# MRcalc to give difference image between fixel based and tensor based outputs
+# MRcalc to give difference image between fixel based and WM tensor based outputs
     n_mrcalc16 = Node(
         interface=mrcalcfunc.MRCalc(
             operation = 'subtract',
@@ -798,7 +797,7 @@ def create_DWI_workflow(
     wf.connect([
         (n_mrcalc16, n_datasink, [('out_file', 'diffImage_WMtensor_minus_fixel.mif')])
     ]) 
-#################################################################################
+######################################################################################
     return wf
 
 
