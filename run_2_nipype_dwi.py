@@ -134,7 +134,7 @@ def create_DWI_workflow(
         (n_mrcat, n_datasink, [('out_file', 'noddi_and_PA_b0s.mif')])
     ])
 
-# DWIfslpreproc for image pre-processing using FSL?s eddy tool
+# DWIfslpreproc for image pre-processing using FSL's eddy tool
     n_dwifslpreproc = Node(
         interface=preprocfunc.DWIFslPreProc(
             out_file = 'preprocessedDWIs.mif',
@@ -601,11 +601,11 @@ def create_DWI_workflow(
         ),
         name='n_mrcalc10'
     )
-    # input fixel based image of Brain
+    # input tensor based image of whole Brain
     wf.connect([
         (n_mrcalc9, n_mrcalc10, [('out_file', 'in_file1')])
     ])
-    # input tensor based image of whole Brain
+    # input fixel based image of Brain
     wf.connect([
         (n_mrcalc5, n_mrcalc10, [('out_file', 'in_file2')])
     ])
@@ -765,7 +765,7 @@ def create_DWI_workflow(
         interface=mrcalcfunc.MRCalc(
             operation = 'divide',
             operand = 3.14159265,
-            #out_file = 'WMdti_z_cos_deg.mif'
+            out_file = 'WMdti_z_cos_deg.mif'
         ),
         name='n_mrcalc15'
     )
@@ -776,6 +776,27 @@ def create_DWI_workflow(
     # save output as 'WMdti_z_cos_deg.mif'
     wf.connect([
         (n_mrcalc15, n_datasink, [('out_file', 'WMdti_z_cos_deg.mif')])
+    ]) 
+
+# MRcalc to give difference image between fixel based and tensor based outputs
+    n_mrcalc16 = Node(
+        interface=mrcalcfunc.MRCalc(
+            operation = 'subtract',
+            out_file = 'diffImage_WMtensor_minus_fixel.mif'
+        ),
+        name='n_mrcalc16'
+    )
+    # input fixel image of Brain
+    wf.connect([
+        (n_mrcalc15, n_mrcalc16, [('out_file', 'in_file1')])
+    ])
+    # input tensor image of WM fibres of Brain
+    wf.connect([
+        (n_mrcalc5, n_mrcalc16, [('out_file', 'in_file2')])
+    ])
+    # output difference image as 'diff_imag_WMtensor_minus_fixel.mif'
+    wf.connect([
+        (n_mrcalc16, n_datasink, [('out_file', 'diffImage_WMtensor_minus_fixel.mif')])
     ]) 
 #################################################################################
     return wf
