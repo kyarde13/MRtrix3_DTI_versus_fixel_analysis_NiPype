@@ -38,8 +38,6 @@ class MRCalcOutputSpec(TraitedSpec):
 
 class MRCalc(MRTrix3Base):
     """
-    Concatenate several images into one
-    along a specified axis
     Example
     -------
     >>> mrcalc.inputs.in_file1 = peaks_wmdirections.mif' 
