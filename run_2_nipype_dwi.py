@@ -246,7 +246,7 @@ def create_DWI_workflow(
         (n_dwi2fod, n_datasink, [('csf_odf', 'csffod.mif')])
     ])
 
-# Mrconvert to extract z component (component w.r.t main field) of WM FOD
+# Mrconvert to select the first volume of the WM file (is best image out of 45 slices of wmfod file)    
     n_mrconvert_fod = Node(
         interface=utils.MRConvert(
             out_file = 'Zwmfod.mif',
